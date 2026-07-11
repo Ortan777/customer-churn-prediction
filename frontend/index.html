@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Customer Churn Predictor</title>
+    <meta name="description" content="Predict customer churn using XGBoost ML model - IBM Telco Customer Churn">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        /* ── Reset & Base ─────────────────────────────────────── */
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --bg-primary: #0a0e1a;
+            --bg-card: rgba(15, 23, 42, 0.8);
+            --bg-input: rgba(30, 41, 59, 0.7);
+            --border: rgba(99, 102, 241, 0.2);
+            --border-focus: rgba(99, 102, 241, 0.6);
+            --text-primary: #e2e8f0;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --accent: #818cf8;
+            --accent-glow: rgba(99, 102, 241, 0.3);
+            --success: #34d399;
+            --success-bg: rgba(52, 211, 153, 0.1);
+            --danger: #f87171;
+            --danger-bg: rgba(248, 113, 113, 0.1);
+            --warning: #fbbf24;
+            --warning-bg: rgba(251, 191, 36, 0.1);
+            --gradient-1: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            --gradient-2: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            --radius: 12px;
+            --radius-sm: 8px;
+            --shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+            --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* ── Animated background ──────────────────────────────── */
+        body::before {
+            content: '';
+            position: fixed;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle at 20% 50%, rgba(99, 102, 241, 0.08) 0%, transparent 50%),
+                        radial-gradient(circle at 80% 20%, rgba(168, 85, 247, 0.06) 0%, transparent 50%),
+                        radial-gradient(circle at 50% 80%, rgba(59, 130, 246, 0.05) 0%, transparent 50%);
+            animation: bgFloat 20s ease-in-out infinite;
+            z-index: 0;
+        }
+
+        @keyframes bgFloat {
+            0%, 100% { transform: translate(0, 0) rotate(0deg); }
+            33% { transform: translate(2%, -2%) rotate(1deg); }
+            66% { transform: translate(-1%, 1%) rotate(-1deg); }
+        }
+
+        /* ── Layout ───────────────────────────────────────────── */
+        .container {
+            position: relative;
+            z-index: 1;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 40px 20px 60px;
+        }
+
+        /* ── Header ───────────────────────────────────────────── */
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .header-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 14px;
+            background: var(--accent-glow);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--accent);
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            margin-bottom: 16px;
+        }
+
+        .header-badge .dot {
+            width: 6px;
+            height: 6px;
+            background: var(--success);
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        .header h1 {
+            font-size: 2.2rem;
+            font-weight: 800;
+            background: var(--gradient-1);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            line-height: 1.2;
+            margin-bottom: 8px;
+        }
+
+        .header p {
+            color: var(--text-secondary);
+            font-size: 15px;
+        }
+
+        /* ── Card ─────────────────────────────────────────────── */
+        .card {
+            background: var(--bg-card);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 32px;
+            box-shadow: var(--shadow);
+            margin-bottom: 24px;
+        }
+
+        .card-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .card-title .icon {
+            font-size: 16px;
+        }
+
+        /* ── Form grid ────────────────────────────────────────── */
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+            gap: 16px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .form-group label {
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            letter-spacing: 0.3px;
+        }
+
+        .form-group select,
+        .form-group input {
+            width: 100%;
+            padding: 10px 14px;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            color: var(--text-primary);
+            font-family: 'Inter', sans-serif;
+            font-size: 14px;
+            transition: var(--transition);
+            outline: none;
+            appearance: none;
+        }
+
+        .form-group select {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 12px center;
+            padding-right: 32px;
+            cursor: pointer;
+        }
+
+        .form-group select:focus,
+        .form-group input:focus {
+            border-color: var(--border-focus);
+            box-shadow: 0 0 0 3px var(--accent-glow);
+        }
+
+        .form-group select option {
+            background: #1e293b;
+            color: var(--text-primary);
+        }
+
+        .form-group input::placeholder {
+            color: var(--text-muted);
+        }
+
+        /* ── Submit button ────────────────────────────────────── */
+        .submit-btn {
+            width: 100%;
+            padding: 14px 24px;
+            background: var(--gradient-1);
+            border: none;
+            border-radius: var(--radius-sm);
+            color: white;
+            font-family: 'Inter', sans-serif;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: var(--transition);
+            margin-top: 24px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .submit-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px var(--accent-glow);
+        }
+
+        .submit-btn:active {
+            transform: translateY(0);
+        }
+
+        .submit-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .submit-btn .spinner {
+            display: none;
+            width: 18px;
+            height: 18px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+            margin-right: 8px;
+        }
+
+        .submit-btn.loading .spinner { display: inline-block; }
+        .submit-btn.loading .btn-text { opacity: 0.8; }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ── Result card ──────────────────────────────────────── */
+        .result-card {
+            display: none;
+            animation: slideUp 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .result-card.visible { display: block; }
+
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .result-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+
+        .result-prediction {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .result-badge {
+            padding: 8px 20px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+        }
+
+        .result-badge.churn-yes {
+            background: var(--danger-bg);
+            color: var(--danger);
+            border: 1px solid rgba(248, 113, 113, 0.3);
+        }
+
+        .result-badge.churn-no {
+            background: var(--success-bg);
+            color: var(--success);
+            border: 1px solid rgba(52, 211, 153, 0.3);
+        }
+
+        .result-label {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        /* ── Probability bar ──────────────────────────────────── */
+        .prob-container {
+            margin-top: 8px;
+        }
+
+        .prob-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 13px;
+        }
+
+        .prob-header .prob-label { color: var(--text-secondary); }
+        .prob-header .prob-value { color: var(--text-primary); font-weight: 600; }
+
+        .prob-bar-bg {
+            width: 100%;
+            height: 8px;
+            background: rgba(30, 41, 59, 0.8);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .prob-bar-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 1s cubic-bezier(0.4, 0, 0.2, 1);
+            background: var(--gradient-1);
+        }
+
+        .prob-bar-fill.high { background: linear-gradient(90deg, #f87171, #ef4444); }
+        .prob-bar-fill.medium { background: linear-gradient(90deg, #fbbf24, #f59e0b); }
+        .prob-bar-fill.low { background: linear-gradient(90deg, #34d399, #10b981); }
+
+        /* ── Risk level indicator ─────────────────────────────── */
+        .risk-level {
+            display: flex;
+            gap: 16px;
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border);
+        }
+
+        .risk-item {
+            flex: 1;
+            text-align: center;
+            padding: 16px 8px;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border);
+            transition: var(--transition);
+        }
+
+        .risk-item.active-low { background: var(--success-bg); border-color: rgba(52, 211, 153, 0.4); }
+        .risk-item.active-medium { background: var(--warning-bg); border-color: rgba(251, 191, 36, 0.4); }
+        .risk-item.active-high { background: var(--danger-bg); border-color: rgba(248, 113, 113, 0.4); }
+
+        .risk-item .risk-icon { font-size: 24px; margin-bottom: 4px; }
+        .risk-item .risk-name { font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
+
+        /* ── Error ────────────────────────────────────────────── */
+        .error-msg {
+            display: none;
+            padding: 12px 16px;
+            background: var(--danger-bg);
+            border: 1px solid rgba(248, 113, 113, 0.3);
+            border-radius: var(--radius-sm);
+            color: var(--danger);
+            font-size: 13px;
+            margin-top: 16px;
+        }
+
+        .error-msg.visible { display: block; }
+
+        /* ── Footer ───────────────────────────────────────────── */
+        .footer {
+            text-align: center;
+            margin-top: 40px;
+            color: var(--text-muted);
+            font-size: 12px;
+        }
+
+        .footer a { color: var(--accent); text-decoration: none; }
+        .footer a:hover { text-decoration: underline; }
+
+        /* ── Responsive ───────────────────────────────────────── */
+        @media (max-width: 600px) {
+            .container { padding: 20px 16px 40px; }
+            .card { padding: 20px; }
+            .header h1 { font-size: 1.6rem; }
+            .form-grid { grid-template-columns: 1fr; }
+            .risk-level { flex-direction: column; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <div class="header-badge">
+                <span class="dot"></span>
+                XGBoost Model Active
+            </div>
+            <h1>Customer Churn Predictor</h1>
+            <p>Predict whether a customer will churn using machine learning</p>
+        </div>
+
+        <!-- Form Card -->
+        <div class="card">
+            <div class="card-title"><span class="icon">&#9881;</span> Customer Details</div>
+            <form id="churnForm">
+                <div class="form-grid">
+                    <!-- Personal Info -->
+                    <div class="form-group">
+                        <label for="gender">Gender</label>
+                        <select id="gender" name="gender">
+                            <option value="Male">Male</option>
+                            <option value="Female">Female</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="SeniorCitizen">Senior Citizen</label>
+                        <select id="SeniorCitizen" name="SeniorCitizen">
+                            <option value="0">No</option>
+                            <option value="1">Yes</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="Partner">Partner</label>
+                        <select id="Partner" name="Partner">
+                            <option value="Yes">Yes</option>
+                            <option value="No" selected>No</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="Dependents">Dependents</label>
+                        <select id="Dependents" name="Dependents">
+                            <option value="Yes">Yes</option>
+                            <option value="No" selected>No</option>
+                        </select>
+                    </div>
+
+                    <!-- Account Info -->
+                    <div class="form-group">
+                        <label for="tenure">Tenure (months)</label>
+                        <input type="number" id="tenure" name="tenure" value="12" min="0" max="72" placeholder="0-72">
+                    </div>
+                    <div class="form-group">
+                        <label for="MonthlyCharges">Monthly Charges ($)</label>
+                        <input type="number" id="MonthlyCharges" name="MonthlyCharges" value="70.35" step="0.01" min="0" placeholder="e.g. 70.35">
+                    </div>
+                    <div class="form-group">
+                        <label for="TotalCharges">Total Charges ($)</label>
+                        <input type="number" id="TotalCharges" name="TotalCharges" value="844.20" step="0.01" min="0" placeholder="e.g. 844.20">
+                    </div>
+
+                    <!-- Services -->
+                    <div class="form-group">
+                        <label for="PhoneService">Phone Service</label>
+                        <select id="PhoneService" name="PhoneService">
+                            <option value="Yes" selected>Yes</option>
+                            <option value="No">No</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="MultipleLines">Multiple Lines</label>
+                        <select id="MultipleLines" name="MultipleLines">
+                            <option value="Yes">Yes</option>
+                            <option value="No" selected>No</option>
+                            <option value="No phone service">No phone service</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="InternetService">Internet Service</label>
+                        <select id="InternetService" name="InternetService">
+                            <option value="DSL">DSL</option>
+                            <option value="Fiber optic" selected>Fiber optic</option>
+                            <option value="No">No</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="OnlineSecurity">Online Security</label>
+                        <select id="OnlineSecurity" name="OnlineSecurity">
+                            <option value="Yes">Yes</option>
+                            <option value="No" selected>No</option>
+                            <option value="No internet service">No internet service</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="OnlineBackup">Online Backup</label>
+                        <select id="OnlineBackup" name="OnlineBackup">
+                            <option value="Yes">Yes</option>
+                            <option value="No" selected>No</option>
+                            <option value="No internet service">No internet service</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="DeviceProtection">Device Protection</label>
+                        <select id="DeviceProtection" name="DeviceProtection">
+                            <option value="Yes">Yes</option>
+                            <option value="No" selected>No</option>
+                            <option value="No internet service">No internet service</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="TechSupport">Tech Support</label>
+                        <select id="TechSupport" name="TechSupport">
+                            <option value="Yes">Yes</option>
+                            <option value="No" selected>No</option>
+                            <option value="No internet service">No internet service</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="StreamingTV">Streaming TV</label>
+                        <select id="StreamingTV" name="StreamingTV">
+                            <option value="Yes">Yes</option>
+                            <option value="No" selected>No</option>
+                            <option value="No internet service">No internet service</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="StreamingMovies">Streaming Movies</label>
+                        <select id="StreamingMovies" name="StreamingMovies">
+                            <option value="Yes">Yes</option>
+                            <option value="No" selected>No</option>
+                            <option value="No internet service">No internet service</option>
+                        </select>
+                    </div>
+
+                    <!-- Contract & Billing -->
+                    <div class="form-group">
+                        <label for="Contract">Contract</label>
+                        <select id="Contract" name="Contract">
+                            <option value="Month-to-month" selected>Month-to-month</option>
+                            <option value="One year">One year</option>
+                            <option value="Two year">Two year</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="PaperlessBilling">Paperless Billing</label>
+                        <select id="PaperlessBilling" name="PaperlessBilling">
+                            <option value="Yes" selected>Yes</option>
+                            <option value="No">No</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="PaymentMethod">Payment Method</label>
+                        <select id="PaymentMethod" name="PaymentMethod">
+                            <option value="Electronic check" selected>Electronic check</option>
+                            <option value="Mailed check">Mailed check</option>
+                            <option value="Bank transfer (automatic)">Bank transfer (automatic)</option>
+                            <option value="Credit card (automatic)">Credit card (automatic)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <button type="submit" class="submit-btn" id="submitBtn">
+                    <span class="spinner"></span>
+                    <span class="btn-text">Predict Churn</span>
+                </button>
+
+                <div class="error-msg" id="errorMsg"></div>
+            </form>
+        </div>
+
+        <!-- Result Card -->
+        <div class="card result-card" id="resultCard">
+            <div class="card-title"><span class="icon">&#9889;</span> Prediction Result</div>
+
+            <div class="result-header">
+                <div class="result-prediction">
+                    <span class="result-badge" id="resultBadge">--</span>
+                    <span class="result-label" id="resultLabel"></span>
+                </div>
+            </div>
+
+            <div class="prob-container">
+                <div class="prob-header">
+                    <span class="prob-label">Churn Probability</span>
+                    <span class="prob-value" id="probValue">0%</span>
+                </div>
+                <div class="prob-bar-bg">
+                    <div class="prob-bar-fill" id="probBar" style="width: 0%"></div>
+                </div>
+            </div>
+
+            <div class="risk-level">
+                <div class="risk-item" id="riskLow">
+                    <div class="risk-icon">&#128994;</div>
+                    <div class="risk-name">Low Risk</div>
+                </div>
+                <div class="risk-item" id="riskMedium">
+                    <div class="risk-icon">&#128992;</div>
+                    <div class="risk-name">Medium Risk</div>
+                </div>
+                <div class="risk-item" id="riskHigh">
+                    <div class="risk-icon">&#128308;</div>
+                    <div class="risk-name">High Risk</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="footer">
+            Powered by <a href="http://localhost:8000/docs" target="_blank">FastAPI</a> &middot; XGBoost &middot; MLflow
+        </div>
+    </div>
+
+    <script>
+        // ── Configuration ────────────────────────────────────────
+        const API_URL = "http://localhost:8000";
+
+        // ── DOM Elements ─────────────────────────────────────────
+        const form = document.getElementById("churnForm");
+        const submitBtn = document.getElementById("submitBtn");
+        const errorMsg = document.getElementById("errorMsg");
+        const resultCard = document.getElementById("resultCard");
+        const resultBadge = document.getElementById("resultBadge");
+        const resultLabel = document.getElementById("resultLabel");
+        const probValue = document.getElementById("probValue");
+        const probBar = document.getElementById("probBar");
+        const riskLow = document.getElementById("riskLow");
+        const riskMedium = document.getElementById("riskMedium");
+        const riskHigh = document.getElementById("riskHigh");
+
+        // ── Form submission ──────────────────────────────────────
+        form.addEventListener("submit", async (e) => {
+            e.preventDefault();
+
+            // Reset UI
+            errorMsg.classList.remove("visible");
+            submitBtn.classList.add("loading");
+            submitBtn.disabled = true;
+
+            // Collect form data
+            const payload = {
+                gender: document.getElementById("gender").value,
+                SeniorCitizen: parseInt(document.getElementById("SeniorCitizen").value),
+                Partner: document.getElementById("Partner").value,
+                Dependents: document.getElementById("Dependents").value,
+                tenure: parseInt(document.getElementById("tenure").value) || 0,
+                PhoneService: document.getElementById("PhoneService").value,
+                MultipleLines: document.getElementById("MultipleLines").value,
+                InternetService: document.getElementById("InternetService").value,
+                OnlineSecurity: document.getElementById("OnlineSecurity").value,
+                OnlineBackup: document.getElementById("OnlineBackup").value,
+                DeviceProtection: document.getElementById("DeviceProtection").value,
+                TechSupport: document.getElementById("TechSupport").value,
+                StreamingTV: document.getElementById("StreamingTV").value,
+                StreamingMovies: document.getElementById("StreamingMovies").value,
+                Contract: document.getElementById("Contract").value,
+                PaperlessBilling: document.getElementById("PaperlessBilling").value,
+                PaymentMethod: document.getElementById("PaymentMethod").value,
+                MonthlyCharges: parseFloat(document.getElementById("MonthlyCharges").value) || 0,
+                TotalCharges: parseFloat(document.getElementById("TotalCharges").value) || 0,
+            };
+
+            try {
+                const response = await fetch(`${API_URL}/predict`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload),
+                });
+
+                if (!response.ok) {
+                    const errData = await response.json();
+                    throw new Error(errData.detail || "Prediction failed");
+                }
+
+                const result = await response.json();
+                displayResult(result);
+            } catch (err) {
+                errorMsg.textContent = "Error: " + err.message;
+                errorMsg.classList.add("visible");
+            } finally {
+                submitBtn.classList.remove("loading");
+                submitBtn.disabled = false;
+            }
+        });
+
+        // ── Display result ───────────────────────────────────────
+        function displayResult(result) {
+            const isChurn = result.prediction === "Yes";
+            const probability = result.probability;
+            const probPercent = (probability * 100).toFixed(1);
+
+            // Badge
+            resultBadge.textContent = isChurn ? "WILL CHURN" : "WILL STAY";
+            resultBadge.className = "result-badge " + (isChurn ? "churn-yes" : "churn-no");
+
+            // Label
+            resultLabel.textContent = isChurn
+                ? "This customer is likely to leave."
+                : "This customer is likely to stay.";
+
+            // Probability bar
+            probValue.textContent = probPercent + "%";
+            probBar.style.width = probPercent + "%";
+            probBar.className = "prob-bar-fill";
+            if (probability >= 0.7) probBar.classList.add("high");
+            else if (probability >= 0.4) probBar.classList.add("medium");
+            else probBar.classList.add("low");
+
+            // Risk level indicators
+            riskLow.className = "risk-item";
+            riskMedium.className = "risk-item";
+            riskHigh.className = "risk-item";
+            if (probability < 0.4) riskLow.classList.add("active-low");
+            else if (probability < 0.7) riskMedium.classList.add("active-medium");
+            else riskHigh.classList.add("active-high");
+
+            // Show result card
+            resultCard.classList.add("visible");
+            resultCard.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        }
+    </script>
+</body>
+</html>
