@@ -100,6 +100,60 @@ app.add_middleware(
 )
 
 
+# -- Feature columns fallback -----------------------------------------------
+
+# Hardcoded feature columns derived from the known preprocessing logic in preprocess.py.
+# Used when feature_columns.json is not present locally.
+DEFAULT_FEATURE_COLUMNS = [
+    "gender", "SeniorCitizen", "Partner", "Dependents", "tenure",
+    "PhoneService", "MultipleLines",
+    "InternetService_Fiber optic", "InternetService_No",
+    "OnlineSecurity", "OnlineBackup", "DeviceProtection", "TechSupport",
+    "StreamingTV", "StreamingMovies",
+    "Contract_One year", "Contract_Two year",
+    "PaperlessBilling",
+    "PaymentMethod_Credit card (automatic)", "PaymentMethod_Electronic check",
+    "PaymentMethod_Mailed check",
+    "MonthlyCharges", "TotalCharges",
+]
+
+
+def _resolve_feature_columns(model) -> list:
+    """
+    Resolve feature columns with the following priority:
+      1. model.feature_names_in_ (set when model is fitted on a named DataFrame)
+      2. feature_columns.json in models/ directory
+      3. feature_columns.json in registered_model/ directory
+      4. Hardcoded DEFAULT_FEATURE_COLUMNS derived from preprocessing logic
+    """
+    # 1. Try model attribute
+    if model is not None and hasattr(model, "feature_names_in_"):
+        cols = list(model.feature_names_in_)
+        print(f"[Startup] Feature columns loaded from model.feature_names_in_ ({len(cols)} features) [OK]")
+        return cols
+
+    # 2. Try models/ directory
+    try:
+        cols = load_feature_columns(MODEL_DIR)
+        print(f"[Startup] Feature columns loaded from {MODEL_DIR}/feature_columns.json ({len(cols)} features) [OK]")
+        return cols
+    except FileNotFoundError:
+        pass
+
+    # 3. Try registered_model/ directory
+    registered_model_dir = os.path.join(BASE_DIR, "registered_model")
+    try:
+        cols = load_feature_columns(registered_model_dir)
+        print(f"[Startup] Feature columns loaded from registered_model/feature_columns.json ({len(cols)} features) [OK]")
+        return cols
+    except FileNotFoundError:
+        pass
+
+    # 4. Use hardcoded fallback
+    print(f"[Startup] Using hardcoded DEFAULT_FEATURE_COLUMNS ({len(DEFAULT_FEATURE_COLUMNS)} features) [OK]")
+    return DEFAULT_FEATURE_COLUMNS
+
+
 # -- Startup event: load model ----------------------------------------------
 
 @app.on_event("startup")
@@ -107,7 +161,7 @@ def load_model_on_startup():
     """
     Load the trained model and feature columns at startup.
     Downloads the registered model from S3 if not present locally,
-    then loads it using MLflow.
+    then loads it using skops directly (robust across mlflow versions).
     """
     global MODEL, FEATURE_COLUMNS
 
@@ -116,7 +170,7 @@ def load_model_on_startup():
     # 1. Download model from S3 if local registered_model folder is missing/empty
     if not os.path.exists(registered_model_dir) or not os.listdir(registered_model_dir):
         print(f"[Startup] registered_model folder not found locally. Attempting to download from S3...")
-        
+
         # Verify S3 credentials exist
         if not config.AWS_ACCESS_KEY or not config.AWS_SECRET_KEY or not config.BUCKET_NAME:
             print("[Startup] [ERROR] AWS credentials or BUCKET_NAME not set in backend/.env. Cannot download model from S3.")
@@ -130,26 +184,37 @@ def load_model_on_startup():
                 )
                 os.makedirs(registered_model_dir, exist_ok=True)
                 files_to_download = ["MLmodel", "model.skops", "conda.yaml", "python_env.yaml", "requirements.txt"]
-                
+
                 for filename in files_to_download:
                     s3_key = f"registered_model/{filename}"
                     local_path = os.path.join(registered_model_dir, filename)
                     print(f"[S3 Download] Downloading s3://{config.BUCKET_NAME}/{s3_key} -> {local_path}")
                     s3_client.download_file(config.BUCKET_NAME, s3_key, local_path)
-                    
+
                 print(f"[Startup] All model artifacts downloaded successfully from S3 to {registered_model_dir} [OK]")
             except Exception as e:
                 print(f"[Startup] [ERROR] Failed to download model from S3: {e}")
 
-    # 2. Load model using MLflow (sklearn flavor)
-    if os.path.exists(registered_model_dir) and os.listdir(registered_model_dir):
+    # 2. Load model using skops directly (robust across mlflow versions)
+    skops_path = os.path.join(registered_model_dir, "model.skops")
+    if os.path.exists(skops_path):
+        try:
+            import skops.io as sio
+            untrusted_types = sio.get_untrusted_types(file=skops_path)
+            MODEL = sio.load(skops_path, trusted=untrusted_types)
+            print(f"[Startup] Model loaded from {skops_path} with skops [OK]")
+        except Exception as e:
+            print(f"[Startup] [ERROR] Failed to load model using skops: {e}")
+
+    # Fallback: try mlflow if skops failed
+    if MODEL is None and os.path.exists(registered_model_dir) and os.listdir(registered_model_dir):
         try:
             MODEL = mlflow.sklearn.load_model(registered_model_dir)
             print(f"[Startup] Model loaded from {registered_model_dir} with MLflow [OK]")
         except Exception as e:
             print(f"[Startup] [ERROR] Failed to load model using MLflow: {e}")
-    
-    # Fallback to local joblib model if MLflow load failed or model folder is missing
+
+    # Fallback: try local joblib model
     if MODEL is None:
         if os.path.exists(MODEL_PATH):
             print(f"[Startup] Fallback: loading baseline model from {MODEL_PATH}...")
@@ -158,12 +223,9 @@ def load_model_on_startup():
         else:
             print(f"[Startup] [ERROR] No model found locally or on S3.")
 
-    # 3. Load feature columns
-    try:
-        FEATURE_COLUMNS = load_feature_columns(MODEL_DIR)
-        print(f"[Startup] Feature columns loaded ({len(FEATURE_COLUMNS)} features) [OK]")
-    except Exception as e:
-        print(f"[Startup] [ERROR] Failed to load feature columns: {e}")
+    # 3. Resolve feature columns
+    FEATURE_COLUMNS = _resolve_feature_columns(MODEL)
+    print(f"[Startup] Ready — model_loaded={MODEL is not None}, features={len(FEATURE_COLUMNS) if FEATURE_COLUMNS else 0}")
 
 
 # -- Endpoints ---------------------------------------------------------------
