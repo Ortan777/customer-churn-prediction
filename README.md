@@ -3,6 +3,7 @@
 An end-to-end Machine Learning project that predicts customer churn using the IBM Telco Customer Churn dataset. The project demonstrates the complete MLOps workflow from model training to cloud deployment using MLflow, Amazon S3, Docker, FastAPI, and AWS Elastic Beanstalk.
 
 ---
+Demo ="http://customer-churn-api-env.eba-523x2gmq.eu-north-1.elasticbeanstalk.com/docs#/"
 
 ## Project Overview
 
