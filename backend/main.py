@@ -1,4 +1,4 @@
-﻿"""
+"""
 main.py — FastAPI Application for Customer Churn Prediction
 
 Endpoints:
@@ -25,6 +25,10 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import Optional
+
+import boto3
+import mlflow.sklearn
+import config
 
 from preprocess import preprocess_single_row, load_feature_columns
 
@@ -102,18 +106,64 @@ app.add_middleware(
 def load_model_on_startup():
     """
     Load the trained model and feature columns at startup.
-    This avoids loading the model on every request.
+    Downloads the registered model from S3 if not present locally,
+    then loads it using MLflow.
     """
     global MODEL, FEATURE_COLUMNS
 
-    if not os.path.exists(MODEL_PATH):
-        print(f"[WARNING] Model not found at {MODEL_PATH}. Run app.py first to train.")
-        return
+    registered_model_dir = os.path.join(BASE_DIR, "registered_model")
 
-    MODEL = joblib.load(MODEL_PATH)
-    FEATURE_COLUMNS = load_feature_columns(MODEL_DIR)
-    print(f"[Startup] Model loaded from {MODEL_PATH} [OK]")
-    print(f"[Startup] Feature columns loaded ({len(FEATURE_COLUMNS)} features) [OK]")
+    # 1. Download model from S3 if local registered_model folder is missing/empty
+    if not os.path.exists(registered_model_dir) or not os.listdir(registered_model_dir):
+        print(f"[Startup] registered_model folder not found locally. Attempting to download from S3...")
+        
+        # Verify S3 credentials exist
+        if not config.AWS_ACCESS_KEY or not config.AWS_SECRET_KEY or not config.BUCKET_NAME:
+            print("[Startup] [ERROR] AWS credentials or BUCKET_NAME not set in backend/.env. Cannot download model from S3.")
+        else:
+            try:
+                s3_client = boto3.client(
+                    "s3",
+                    aws_access_key_id=config.AWS_ACCESS_KEY,
+                    aws_secret_access_key=config.AWS_SECRET_KEY,
+                    region_name=config.AWS_REGION
+                )
+                os.makedirs(registered_model_dir, exist_ok=True)
+                files_to_download = ["MLmodel", "model.skops", "conda.yaml", "python_env.yaml", "requirements.txt"]
+                
+                for filename in files_to_download:
+                    s3_key = f"registered_model/{filename}"
+                    local_path = os.path.join(registered_model_dir, filename)
+                    print(f"[S3 Download] Downloading s3://{config.BUCKET_NAME}/{s3_key} -> {local_path}")
+                    s3_client.download_file(config.BUCKET_NAME, s3_key, local_path)
+                    
+                print(f"[Startup] All model artifacts downloaded successfully from S3 to {registered_model_dir} [OK]")
+            except Exception as e:
+                print(f"[Startup] [ERROR] Failed to download model from S3: {e}")
+
+    # 2. Load model using MLflow (sklearn flavor)
+    if os.path.exists(registered_model_dir) and os.listdir(registered_model_dir):
+        try:
+            MODEL = mlflow.sklearn.load_model(registered_model_dir)
+            print(f"[Startup] Model loaded from {registered_model_dir} with MLflow [OK]")
+        except Exception as e:
+            print(f"[Startup] [ERROR] Failed to load model using MLflow: {e}")
+    
+    # Fallback to local joblib model if MLflow load failed or model folder is missing
+    if MODEL is None:
+        if os.path.exists(MODEL_PATH):
+            print(f"[Startup] Fallback: loading baseline model from {MODEL_PATH}...")
+            MODEL = joblib.load(MODEL_PATH)
+            print(f"[Startup] Model loaded from {MODEL_PATH} [OK]")
+        else:
+            print(f"[Startup] [ERROR] No model found locally or on S3.")
+
+    # 3. Load feature columns
+    try:
+        FEATURE_COLUMNS = load_feature_columns(MODEL_DIR)
+        print(f"[Startup] Feature columns loaded ({len(FEATURE_COLUMNS)} features) [OK]")
+    except Exception as e:
+        print(f"[Startup] [ERROR] Failed to load feature columns: {e}")
 
 
 # -- Endpoints ---------------------------------------------------------------

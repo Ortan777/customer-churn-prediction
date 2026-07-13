@@ -17,6 +17,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY preprocess.py .
 COPY main.py .
 COPY app.py .
+COPY config.py .
 
 # Copy model artifacts (pre-trained model and feature columns)
 # These should exist after running: python app.py

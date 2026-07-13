@@ -15,3 +15,7 @@ python-multipart==0.0.6
 
 # ── AWS S3 (optional — for model artifact storage) ───────
 boto3>=1.28.0
+
+# ── Dotenv and Skops ──────────────────────────────────────
+python-dotenv
+skops

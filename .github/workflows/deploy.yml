@@ -1,0 +1,30 @@
+name: Deploy to Elastic Beanstalk
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v3
+
+      - name: Generate Deployment Archive
+        run: |
+          cd backend
+          # Zip the backend folder, ignoring local venv, database files, and local model folders
+          zip -r ../deploy.zip . -x "myenv/*" "mlruns/*" "mlflow.db" "registered_model/*"
+
+      - name: Deploy to Elastic Beanstalk
+        uses: einaregilsson/beanstalk-deploy@v21
+        with:
+          aws_access_key: ${{ secrets.AWS_ACCESS_KEY }}
+          aws_secret_key: ${{ secrets.AWS_SECRET_KEY }}
+          application_name: customer-churn-api
+          environment_name: customer-churn-env
+          version_label: deploy-${{ github.sha }}
+          region: us-east-1
+          deployment_package: deploy.zip

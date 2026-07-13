@@ -13,10 +13,10 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       # Uncomment and set these for S3 model storage:
-      # - AWS_S3_BUCKET=your-bucket-name
+      # - BUCKET_NAME=your-bucket-name
       # - AWS_REGION=us-east-1
-      # - AWS_ACCESS_KEY_ID=your-key
-      # - AWS_SECRET_ACCESS_KEY=your-secret
+      # - AWS_ACCESS_KEY=your-key
+      # - AWS_SECRET_KEY=your-secret
 
   frontend:
     build:
